@@ -1,0 +1,161 @@
+---
+title: "Using Text Mining To Predict Prices - Part 2"
+subtitle: "Linear Regression"
+output:  
+  html_document:
+    theme: "lumen"
+    highlight: "tango"
+    code_folding: show
+    self_contained: true
+---
+```{r message=FALSE, warning=FALSE}
+library(readr)
+library(dplyr)
+library(tidytext)
+library(tm)
+library(ggplot2)
+library(ggridges)
+
+rm(list=ls())
+col <- RColorBrewer::brewer.pal(5, "Dark2")
+
+options(stringsAsFactors = FALSE)
+knitr::opts_chunk$set(message=FALSE, warning=FALSE)
+```
+
+```{r}
+load(file = "../output/prep2.Rda")
+```
+
+# Regression
+
+Define input variables
+```{r}
+df.reg <- df %>%
+  select(city, price, overall_satisfaction, pic_count,
+         room_type, bed_type, reviews, accommodates) %>%
+  mutate(city = as.factor(city),
+         room_type = as.factor(room_type),
+         bed_type = as.factor(bed_type),
+         log_price = log(price)) %>%
+  filter(price != 0)
+```
+
+Check correlations:
+```{r}
+df.reg %>%
+  select(price, overall_satisfaction, pic_count,
+         reviews, accommodates) %>%
+  cor()
+```
+
+## Base model 
+
+```{r}
+lm.base <- lm(log_price ~ overall_satisfaction + reviews
+              + room_type + accommodates
+              + city + pic_count
+             , data = df.reg,
+             na.action=na.pass)
+
+summary(lm.base) 
+```
+
+*Is there a relationship between predictor and response variables?*
+We can answer this using F stats. This defines the collective effect of all predictor variables on the response variable. $F=1182$
+
+*Which of the predictor variables are significant?*
+Based on the ‘p-value’ we can conclude on this. The lesser the ‘p’ value the more significant is the variable. 
+
+*Is this model fit?*
+We can answer this based on R2 (multiple-R-squared) value as it indicates how much variation is captured by the model. R2 closer to 1 indicates that the model explains the large value of the variance of the model and hence a good fit. In this case, the value is 0.4787 (closer to 1) and hence the model is a good fit.
+
+### Visualising Residuals
+
+```{r fig.height=8, fig.width=10}
+par(mfrow=c(2,2))
+plot(lm.base)
+```
+
+*Fitted vs Residual graph*
+In this plot each point is one listing, where the prediction made by the model is on the x-axis, and the accuracy of the prediction is on the y-axis. The distance from the line at 0 is how bad the prediction was for that value.
+
+Since...
+
+    Residual = Observed – Predicted
+
+...positive values for the residual (on the y-axis) mean the prediction was too low, and negative values mean the prediction was too high; 0 means the guess was exactly correct.
+
+Ideally your plot of the residuals to meet the following requirements:
+
+  (1) they’re pretty symmetrically distributed, tending to cluster towards the middle of the plot.
+  
+  (2) they’re clustered around the lower single digits of the y-axis (e.g., 0.5 or 1.5, not 30 or 150).
+  
+  (3) in general there aren’t clear patterns.
+
+*Normal Q-Q Plot*
+Q-Q plot shows whether the residuals are normally distributed. Ideally, the plot should be on the dotted line. If the Q-Q plot is not on the line then models need to be reworked to make the residual normal. In the above plot, we see that most of the plots are on the line except the extreme points (beginning and end).
+
+*Scale-Location*
+This shows how the residuals are spread and whether the residuals have an equal variance or not.
+
+*Residuals vs Leverage*
+The plot helps to find influential observations. Here we need to check for points that are outside the dashed line (Cooks distance). A point outside the dashed line will be influential point and removal of that will affect the regression coefficients.
+
+## Prediction
+
+1. split the sample dataset into training and testing dataset
+2. estimate a linear model using the training data (make a prediction based on the model)
+3. use test dataset to evaluate the model: predict the ‘test’ observation and compare between predicted response and actual response value (RMSE explains on an average how much of the predicted value will be from the actual value) 
+
+```{r}
+#create test and training sets
+bound <- floor((nrow(df.reg)/4)*3)         #define % of training and test set
+
+df.reg <- df.reg[sample(nrow(df.reg)), ]           #sample rows 
+df.train <- df.reg[1:bound, ]              #get training set
+df.test <- df.reg[(bound+1):nrow(df.reg), ]    #get test set
+```
+
+Lets have a look at the distribution 
+
+```{r}
+# Training Data
+summary(df.train)
+```
+
+```{r}
+# Test Data
+summary(df.test)
+```
+
+```{r fig.height=3, fig.width=8}
+p1 <- ggplot(df.train, aes(log(price))) +
+  geom_density(fill = col[3], color = "white") +
+  labs(title = "Train Data")
+
+p2 <- ggplot(df.test, aes(log(price))) +
+  geom_density(fill = col[3], color = "white") +
+  labs(y="", title = "Test Data")
+
+gridExtra::grid.arrange(p1, p2, nrow = 1)
+```
+
+Train the model und predict the test data
+```{r}
+# (1) estimate the training model
+lm.train <- lm(log(price)~., data = df.train)
+
+# (2) make prediction
+pred <- predict(lm.train, newdata = df.test)
+
+# (3) evaluate 
+rmse <- sqrt(sum((exp(pred) - df.test$price)^2)/length(df.test$price))
+c(RMSE = rmse, R2=summary(lm.train)$r.squared)
+```
+
+```{r}
+par(mfrow=c(1,1))
+plot(df.test$price, exp(pred))
+```

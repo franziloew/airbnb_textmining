@@ -1,0 +1,281 @@
+---
+title: "Using Text Mining To Predict Prices - Part 2"
+subtitle: "Linear Regression"
+output:  
+  html_document:
+    theme: "lumen"
+    highlight: "tango"
+    code_folding: show
+    self_contained: true
+---
+```{r message=FALSE, warning=FALSE}
+library(readr)
+library(dplyr)
+library(tidytext)
+library(tm)
+library(ggplot2)
+library(ggridges)
+require(quanteda)
+
+rm(list=ls())
+col <- RColorBrewer::brewer.pal(5, "Dark2")
+
+options(stringsAsFactors = FALSE)
+knitr::opts_chunk$set(message=FALSE, warning=FALSE)
+```
+
+# Text Regression
+```{r}
+load(file="../output/prep2.Rda")
+```
+
+Can we improve the model including the description text of the listing on the right-hand side of the model?
+To include text as data, we first have to preprocess it
+
+
+```{r}
+corp <- Corpus(VectorSource(df$text_cleaned))
+dtm <- DocumentTermMatrix(corp)
+
+save(df, corp, dtm, file = "textData.Rda")
+```
+
+```{r}
+load("textData.Rda")
+```
+
+
+As above, we wish to predict the price $y_i$ for each Airbnb listing $i$ based on some independent variables $X$. In this model the text counts $c_i$ of each listing description are used. This is a regression problem like any other, except that the high-dimensionality of $c_i$ makes OLS and other standard techniques infeasible. 
+
+Here, we have $d=20.637$ documents (aka Airbnb listings) each of which is $w$ words long. Each word is drawn from a vocabulary of $p=33.469$ possible words. The unique representation of each document has dimension $p^w$. A common strategy to deal with the high-dimensionality of text data is the estimation of penalized linear models, particularly with $L_1$ penalization (Gentzkow, 2017).
+
+However, a first step to use textdata in a prediction model is to convert it to a Document Term Matrix, where each row is a observation (document) and each column is a unique term. 
+
+```{r}
+dtm
+```
+
+The first five observations of the Document Term Matrix look like this:
+
+```{r}
+inspect(dtm[1:5, 1:10])
+```
+
+Matrices in text analysis problems tend to be very sparse. That is, most of the elements are zero, which implies that they have many parameters that are uninformative. (In contrast: a dense matrix is a matrix in which most of the elements are nonzero.)
+
+Sparsity can be reduced by removing terms that occur very frequently. This tends to have the effect of both reducing overfitting and improving the predictive abilities of the model.
+
+```{r}
+# Here we are reducing the sparsity of the document-term matrix so that the sparsity (% of non-zeros) is a maximum of 99%.
+dtm<-removeSparseTerms(dtm,0.99)
+dtm
+```
+
+```{r}
+inspect(dtm[1:5, 1:10])
+```
+
+```{r}
+# Convert to Dataframe
+dtm.df <- as.matrix(dtm) %>%
+  as.data.frame()
+
+# Merge with orignal dataframe
+dtm.df$document <-as.integer(rownames(dtm.df))
+df$document <- as.integer(rownames(df))
+
+dtm.df <- dtm.df %>%
+  left_join(df %>%
+              select(document, price),
+            by = "document") %>%
+  filter(price != 0) %>%
+  select(-document)
+```
+
+### Linear Regression
+
+#### Model 1: The Default Model
+```{r}
+lm.1 <- lm(log(price)~., data = dtm.df)
+
+summary(lm.1)
+```
+
+The inevitable multicollinearity makes individual parameters difficult to interpret. However, it is still a good exercise to look at the most important coefficients to see if they make intuitive sense in the context of a particular application. Note that “most important” can be defined in a number of ways; one can rank estimated coefficients by their absolute value, or by absolute value scaled by the standard deviation of the associated covariate, or perhaps by the order in which they first become nonzero in a lasso path of decreasing penalties. Gentzkow et al. (2017) suggest looking at a number of different term orderings when attempting to audit a text-regression model fit.
+
+*Is there a relationship between predictor and response variables?*
+We can answer this using F stats. This defines the collective effect of all predictor variables on the response variable. In this model: F=17.85
+
+*Which of the predictor variables are significant?*
+Based on the ‘p-value’ we can conclude on this. The lesser the ‘p’ value the more significant is the variable. From the ‘summary’ dump we can see that ‘zn’, ‘age’ and ‘indus’ are less significant features as the ‘p’ value is large for them. In next model, we can remove these variables from the model.
+
+*Is this model fit?*
+We can answer this based on $R^2$ (multiple-R-squared) value as it indicates how much variation of the dependent variable is captured by the model. 
+
+```{r fig.height=12, fig.width=12}
+par(mfrow=c(2,2))
+plot(lm.1)
+```
+
+*Fitted vs Residual graph*
+Residuals plots should be random in nature and there should not be any pattern in the graph. The average of the residual plot should be close to zero. From the above plot, we can see that the red trend line is almost at zero except at the starting location.
+
+*Normal Q-Q Plot*
+Q-Q plot shows whether the residuals are normally distributed. Ideally, the plot should be on the dotted line. If the Q-Q plot is not on the line then models need to be reworked to make the residual normal. In the above plot, we see that most of the plots are on the line except at towards the end.
+
+*Scale-Location*
+This shows how the residuals are spread and whether the residuals have an equal variance or not.
+
+*Residuals vs Leverage*
+The plot helps to find influential observations. Here we need to check for points that are outside the dashed line (Cook's distance). A point outside the dashed line will be influential point and removal of that will affect the regression coefficients.
+
+**Prediction**
+
+1. split the sample dataset into training and testing dataset
+2. estimate a linear model using the training data (make a prediction based on the model)
+3. use test dataset to evaluate the model: predict the ‘test’ observation and compare between predicted response and actual response value (RMSE explains on an average how much of the predicted value will be from the actual value) 
+
+```{r}
+#create test and training sets
+bound <- floor((nrow(dtm.df)/4)*3)         #define % of training and test set
+
+dtm.df <- dtm.df[sample(nrow(dtm.df)), ]           #sample rows 
+df.train <- dtm.df[1:bound, ]              #get training set
+df.test <- dtm.df[(bound+1):nrow(dtm.df), ]    #get test set
+```
+
+Lets have a look at the distribution 
+
+```{r}
+# Training Data
+summary(df.train$price)
+```
+
+```{r}
+# Test Data
+summary(df.test$price)
+```
+
+```{r fig.height=3, fig.width=8}
+p1 <- ggplot(df.train, aes(log(price))) +
+  geom_density(fill = col[3], color = "white") +
+  labs(title = "Train Data")
+
+p2 <- ggplot(df.test, aes(log(price))) +
+  geom_density(fill = col[3], color = "white") +
+  labs(y="", title = "Test Data")
+
+grid.arrange(p1, p2, ncol=2)
+```
+
+Train the model und predict the test data
+```{r}
+# (1) estimate the training model
+lm.train <- lm(log(price)~., data = df.train)
+
+# (2) make prediction
+pred <- predict(lm.train, newdata = df.test)
+
+# (3) evaluate 
+rmse <- sqrt(sum((exp(pred) - df.test$price)^2)/length(df.test$price))
+c(RMSE = rmse, R2=summary(lm.train)$r.squared)
+```
+
+```{r}
+par(mfrow=c(1,1))
+plot(df.test$price, exp(pred))
+```
+
+
+### Penalized Regression
+```{r}
+library(glmnet)
+```
+
+Ridge regression and the lasso are closely related, but only the Lasso has the ability to select predictors. Like OLS, ridge attempts to minimize residual sum of squares of predictors in a given model. However, ridge regression includes an additional ‘shrinkage’ term – the square of the coefficient estimate – which shrinks the estimate of the coefficients towards zero. The impact of this term is controlled by another term, lambda (determined seperately). Two interesting implications of this design are the facts that when $\lambda = 0$ the OLS coefficients are returned and when $\lambda = ∞$, coefficients will approach zero.
+
+```{r}
+lambda <- 10^seq(10, -2, length = 100)
+```
+
+```{r}
+#ridge
+ridge.mod <- glmnet(x, y, alpha = 0, lambda = lambda)
+predict(ridge.mod, s = 0, type = 'coefficients')[1:10,]
+```
+
+The differences here are nominal. Let's see if we can use ridge to improve on the OLS estimate.
+
+```{r}
+textlm <- lm(price~., data = dtm.df, subset = train)
+
+ridge.mod <- glmnet(x[train,], y[train], alpha = 0, lambda = lambda)
+
+#find the best lambda from our list via cross-validation
+cv.out <- cv.glmnet(x[train,], y[train], alpha = 0)
+```
+
+```{r}
+bestlam <- cv.out$lambda.min
+```
+
+```{r}
+#make predictions
+ridge.pred <- predict(ridge.mod, s = bestlam, newx = x[test,])
+s.pred <- predict(swisslm, newdata = swiss[test,])
+#check MSE
+mean((s.pred-ytest)^2)
+```
+
+```{r}
+mean((ridge.pred-ytest)^2)
+```
+
+Ridge performs better for this data according to the MSE.
+
+```{r}
+#a look at the coefficients
+out = glmnet(x[train,],y[train],alpha = 0)
+predict(ridge.mod, type = "coefficients", s = bestlam)[1:6,]
+```
+
+As expected, most of the coefficient estimates are more conservative.
+
+Let's have a look at the lasso. The big difference here is in the shrinkage term – the lasso takes the absolute value of the coefficient estimates.
+
+```{r}
+lasso.mod <- glmnet(x[train,], y[train], alpha = 1, 
+                    lambda = lambda)
+
+plot(lasso.mod, xvar = "lambda")
+```
+
+To interpet this plot, recall the optimization problem the lasso solves
+
+$$
+\beta_{LASSO}=\min_{\beta}(y-x\beta)'(y-x\beta)+\lambda \sum_j|\beta_j|
+$$
+
+so $\lambda$ is the penalty or the Lagrange multiplier. Setting $\lambda = 0$ yields the familiar minimization of squared residuals while for greater values, some of the coefficients will be set to zero. As $\lambda→∞$, all the coefficents will be set to zero. 
+
+Next, we can choose the best lambda using crossvalidation (splitting the sample into training and validation sets and choosing the value of lambda with which the error of prediction is minimal.)
+
+```{r}
+crossval <-  cv.glmnet(x = x, y = y)
+plot(crossval)
+```
+
+```{r}
+penalty <- crossval$lambda.min #optimal lambda
+penalty #minimal shrinkage
+```
+
+```{r}
+fit1 <-glmnet(x = x, y = y, alpha = 1, lambda = penalty )
+plot(fit1)
+```
+
+
+
+
+The MSE is a bit higher for the lasso estimate. 
