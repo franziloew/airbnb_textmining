@@ -8,7 +8,7 @@ output:
     code_folding: show
     self_contained: true
 ---
-```{r message=FALSE, warning=FALSE}
+```{r message=FALSE, warning=FALSE, include=FALSE}
 library(readr)
 library(dplyr)
 library(tidytext)
@@ -21,27 +21,44 @@ col <- RColorBrewer::brewer.pal(5, "Dark2")
 
 options(stringsAsFactors = FALSE)
 knitr::opts_chunk$set(message=FALSE, warning=FALSE)
-```
 
-```{r}
 load(file = "../output/prep2.Rda")
 ```
 
-# Regression
+# Linear Regression
 
-Define input variables
+Based on the literature dealing with Airbnb listing prices (e.g. [Gibbs et al. (2018)](https://www.tandfonline.com/doi/abs/10.1080/10548408.2017.1308292?journalCode=wttm20), [Teubner et al. (2017)](https://www.ceeol.com/search/article-detail?id=596092)), I assume that the following variables have an effect on the price:
+
+- city: The location of the listing
+
+- reviews: Number of reviews of a listing
+
+- accommodates: Number of guests the listing is able to host
+
+- overall_satisfaction: The overall rating of a listing
+
+- pic_count: The number of fotos of the listing
+
+- language: langugage of the description text of the listing
+
+- room_type: (i) Entire home, (ii) Private room, (iii) Shared room
+
 ```{r}
+#reduce dataframe
+
 df.reg <- df %>%
-  select(city, price, overall_satisfaction, pic_count,
+  select(city, price, overall_satisfaction, pic_count, 
+         language,
          room_type, bed_type, reviews, accommodates) %>%
   mutate(city = as.factor(city),
+         language = as.factor(language),
          room_type = as.factor(room_type),
-         bed_type = as.factor(bed_type),
          log_price = log(price)) %>%
   filter(price != 0)
 ```
 
-Check correlations:
+Check correlations to see if we have a problem of multicollinearity:
+
 ```{r}
 df.reg %>%
   select(price, overall_satisfaction, pic_count,
@@ -49,20 +66,52 @@ df.reg %>%
   cor()
 ```
 
-## Base model 
+To make predictions, the following steps are applied:  
+
+1. Split the sample dataset into training and testing dataset.
+
+2. Estimate a linear model using the training data (make a prediction based on the model).
+
+3. Use test dataset to evaluate the model: predict the ‘test’ observation and compare between predicted response and actual response value (RMSE explains on an average how much of the predicted value will be from the actual value) 
+
+## (1) Training / Test
 
 ```{r}
-lm.base <- lm(log_price ~ overall_satisfaction + reviews
-              + room_type + accommodates
-              + city + pic_count
-             , data = df.reg,
-             na.action=na.pass)
+#create test and training sets
+bound <- floor((nrow(df.reg)/4)*3)         #define % of training and test set
 
-summary(lm.base) 
+df.reg <- df.reg[sample(nrow(df.reg)), ]           #sample rows 
+df.train <- df.reg[1:bound, ]              #get training set
+df.test <- df.reg[(bound+1):nrow(df.reg), ]    #get test set
 ```
 
-*Is there a relationship between predictor and response variables?*
-We can answer this using F stats. This defines the collective effect of all predictor variables on the response variable. $F=1182$
+In [part 1](https://franziloew.github.io/airbnb_textmining/data_prep.html) we saw that our dependent variable is left-skewed. This is somehow problematic, as the linear regression assumes normal distributed data. A common strategy to deal with left-skewed data is to take the logarithmic values (log-level model). Lets have a look at the log distributions.
+
+```{r fig.height=3, fig.width=8}
+p1 <- ggplot(df.train, aes(log(price))) +
+  geom_density(fill = col[3], color = "white") +
+  labs(title = "Train Data")
+
+p2 <- ggplot(df.test, aes(log(price))) +
+  geom_density(fill = col[3], color = "white") +
+  labs(y="", title = "Test Data")
+
+gridExtra::grid.arrange(p1, p2, nrow = 1)
+```
+
+## (2) Estimate Training Data 
+
+```{r}
+lm.train <- lm(log_price ~ overall_satisfaction + reviews
+              + room_type + accommodates + language
+              + city + pic_count
+             , data = df.train,
+             na.action=na.pass)
+
+summary(lm.train) 
+```
+
+**F stats**: This defines the collective effect of all predictor variables on the response variable. $F=1457$
 
 *Which of the predictor variables are significant?*
 Based on the ‘p-value’ we can conclude on this. The lesser the ‘p’ value the more significant is the variable. 
@@ -74,7 +123,7 @@ We can answer this based on R2 (multiple-R-squared) value as it indicates how mu
 
 ```{r fig.height=8, fig.width=10}
 par(mfrow=c(2,2))
-plot(lm.base)
+plot(lm.train)
 ```
 
 *Fitted vs Residual graph*
@@ -103,59 +152,29 @@ This shows how the residuals are spread and whether the residuals have an equal 
 *Residuals vs Leverage*
 The plot helps to find influential observations. Here we need to check for points that are outside the dashed line (Cooks distance). A point outside the dashed line will be influential point and removal of that will affect the regression coefficients.
 
-## Prediction
-
-1. split the sample dataset into training and testing dataset
-2. estimate a linear model using the training data (make a prediction based on the model)
-3. use test dataset to evaluate the model: predict the ‘test’ observation and compare between predicted response and actual response value (RMSE explains on an average how much of the predicted value will be from the actual value) 
-
-```{r}
-#create test and training sets
-bound <- floor((nrow(df.reg)/4)*3)         #define % of training and test set
-
-df.reg <- df.reg[sample(nrow(df.reg)), ]           #sample rows 
-df.train <- df.reg[1:bound, ]              #get training set
-df.test <- df.reg[(bound+1):nrow(df.reg), ]    #get test set
-```
-
-Lets have a look at the distribution 
-
-```{r}
-# Training Data
-summary(df.train)
-```
-
-```{r}
-# Test Data
-summary(df.test)
-```
-
-```{r fig.height=3, fig.width=8}
-p1 <- ggplot(df.train, aes(log(price))) +
-  geom_density(fill = col[3], color = "white") +
-  labs(title = "Train Data")
-
-p2 <- ggplot(df.test, aes(log(price))) +
-  geom_density(fill = col[3], color = "white") +
-  labs(y="", title = "Test Data")
-
-gridExtra::grid.arrange(p1, p2, nrow = 1)
-```
+## (3) Make Predictions
 
 Train the model und predict the test data
 ```{r}
-# (1) estimate the training model
-lm.train <- lm(log(price)~., data = df.train)
-
-# (2) make prediction
 pred <- predict(lm.train, newdata = df.test)
 
+pred <- as.data.frame(pred) 
+pred$listing <- as.numeric(rownames(pred))
+df.test$listing <- as.numeric(rownames(df.test))
+
+pred.df <- left_join(pred, df.test %>%
+                       select(log_price, listing),
+                     by = "listing") %>%
+  mutate(rmse = (pred - log_price)^2/length(log_price))
+```
+
+```{r}
 # (3) evaluate 
-rmse <- sqrt(sum((exp(pred) - df.test$price)^2)/length(df.test$price))
+rmse <- sqrt(sum((exp(pred) - df.test$log_price)^2)/length(df.test$log_price))
 c(RMSE = rmse, R2=summary(lm.train)$r.squared)
 ```
 
 ```{r}
-par(mfrow=c(1,1))
-plot(df.test$price, exp(pred))
+ggplot(pred.df, aes(pred, log_price)) +
+  geom_point()
 ```

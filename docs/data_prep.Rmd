@@ -48,7 +48,11 @@ I use a unique dataset that contains information on 47.006 Airbnb listings from 
 # Data Preparations
 
 ```{r}
-head(rooms)
+dim(rooms)
+```
+
+```{r}
+str(rooms)
 ```
 
 ```{r}
