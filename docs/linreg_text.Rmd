@@ -1,6 +1,6 @@
 ---
 title: "Using Text Mining To Predict Prices - Part 2"
-subtitle: "Linear Regression"
+subtitle: "Linear Regression with Text Data"
 output:  
   html_document:
     theme: "lumen"
@@ -24,34 +24,23 @@ options(stringsAsFactors = FALSE)
 knitr::opts_chunk$set(message=FALSE, warning=FALSE)
 ```
 
-# Text Regression
+
 ```{r}
 load(file="../output/prep2.Rda")
 ```
 
-Can we improve the model including the description text of the listing on the right-hand side of the model?
-To include text as data, we first have to preprocess it
+Can we improve the model from [part 2](https://franziloew.github.io/airbnb_textmining/linreg_text.html) including the description text of the listing on the right-hand side of the model?
 
-
-```{r}
-corp <- Corpus(VectorSource(df$text_cleaned))
-dtm <- DocumentTermMatrix(corp)
-
-save(df, corp, dtm, file = "textData.Rda")
-```
-
-```{r}
-load("textData.Rda")
-```
-
-
-As above, we wish to predict the price $y_i$ for each Airbnb listing $i$ based on some independent variables $X$. In this model the text counts $c_i$ of each listing description are used. This is a regression problem like any other, except that the high-dimensionality of $c_i$ makes OLS and other standard techniques infeasible. 
+As before, we wish to predict the price $y_i$ for each Airbnb listing $i$ based on some independent variables $X$. In this model the text counts $c_i$ of each listing description are used. This is a regression problem like any other, except that the high-dimensionality of $c_i$ makes OLS and other standard techniques infeasible. 
 
 Here, we have $d=20.637$ documents (aka Airbnb listings) each of which is $w$ words long. Each word is drawn from a vocabulary of $p=33.469$ possible words. The unique representation of each document has dimension $p^w$. A common strategy to deal with the high-dimensionality of text data is the estimation of penalized linear models, particularly with $L_1$ penalization (Gentzkow, 2017).
 
 However, a first step to use textdata in a prediction model is to convert it to a Document Term Matrix, where each row is a observation (document) and each column is a unique term. 
 
 ```{r}
+corp <- Corpus(VectorSource(df$text_cleaned))
+dtm <- DocumentTermMatrix(corp)
+
 dtm
 ```
 
@@ -94,14 +83,15 @@ dtm.df <- dtm.df %>%
 
 ### Linear Regression
 
-#### Model 1: The Default Model
+#### Model 1: The Base Model
+
 ```{r}
 lm.1 <- lm(log(price)~., data = dtm.df)
 
 summary(lm.1)
 ```
 
-The inevitable multicollinearity makes individual parameters difficult to interpret. However, it is still a good exercise to look at the most important coefficients to see if they make intuitive sense in the context of a particular application. Note that “most important” can be defined in a number of ways; one can rank estimated coefficients by their absolute value, or by absolute value scaled by the standard deviation of the associated covariate, or perhaps by the order in which they first become nonzero in a lasso path of decreasing penalties. Gentzkow et al. (2017) suggest looking at a number of different term orderings when attempting to audit a text-regression model fit.
+The inevitable multicollinearity makes individual parameters difficult to interpret. However, it is still a good exercise to look at the most important coefficients to see if they make intuitive sense in the context of a particular application. "Most important" can be defined in a number of ways. One can rank the estimated coefficients (1) by their absolute value, (2) by absolute value scaled by the standard deviation of the associated covariate, or (3) by the order in which they first become nonzero in a lasso path of decreasing penalties. Gentzkow et al. (2017) suggest looking at a number of different term orderings when attempting to audit a text-regression model fit.
 
 *Is there a relationship between predictor and response variables?*
 We can answer this using F stats. This defines the collective effect of all predictor variables on the response variable. In this model: F=17.85

@@ -25,8 +25,6 @@ knitr::opts_chunk$set(message=FALSE, warning=FALSE)
 load(file = "../output/prep2.Rda")
 ```
 
-# Linear Regression
-
 Based on the literature dealing with Airbnb listing prices (e.g. [Gibbs et al. (2018)](https://www.tandfonline.com/doi/abs/10.1080/10548408.2017.1308292?journalCode=wttm20), [Teubner et al. (2017)](https://www.ceeol.com/search/article-detail?id=596092)), I assume that the following variables have an effect on the price:
 
 - city: The location of the listing
@@ -63,7 +61,8 @@ Check correlations to see if we have a problem of multicollinearity:
 df.reg %>%
   select(price, overall_satisfaction, pic_count,
          reviews, accommodates) %>%
-  cor()
+  cor() %>%
+  knitr::kable()
 ```
 
 To make predictions, the following steps are applied:  
@@ -111,13 +110,19 @@ lm.train <- lm(log_price ~ overall_satisfaction + reviews
 summary(lm.train) 
 ```
 
-**F stats**: This defines the collective effect of all predictor variables on the response variable. $F=1457$
+**Coefficients**
 
-*Which of the predictor variables are significant?*
-Based on the ‘p-value’ we can conclude on this. The lesser the ‘p’ value the more significant is the variable. 
+As I am estimating a log-level regression model ($ln(y)=X\beta+\epsilon$), the interpretation of the coefficients is as follows: $\% \Delta y=100\beta \Delta X$*. E.g. the coefficient of the rating variabels (overall_satisfaction) can be interpreted as "if the rating rises by 1 star, we’d expect the price to change by $0.8 \%$, assuming that all other variables remain the same”. Interestingly, the number of reviews has a negative effect on the price. Although this result may not seem intuitive at first glance, it confirms the results of earlier studies on Airbnb listing prices [Teubner et al. (2017)](https://www.ceeol.com/search/article-detail?id=596092)). Overall, all exogenous variables are highly significant, except for the dummy variables for Cologne and Stuttgart. The variable with the strongest effect is the dummy variable for shared room. If the listing offers a shared room, the price decreases by $68\%$ compared to the case were the listing would offer the entire home and all other variables remain the same. 
 
-*Is this model fit?*
-We can answer this based on R2 (multiple-R-squared) value as it indicates how much variation is captured by the model. R2 closer to 1 indicates that the model explains the large value of the variance of the model and hence a good fit. In this case, the value is 0.4787 (closer to 1) and hence the model is a good fit.
+(*Technically, the interpretation is $\% \Delta y=100(e^{\beta}-1)$ but the previously mentioned interpretation is approximately true for values $-0.1 < \beta < 0.1$) 
+
+**F stats** 
+
+This defines the collective effect of all predictor variables on the response variable. The null hypothesis states that the model with no independent variables fits the data as well as your model. This can be rejected as the p-value is very small $F=1457$
+
+**Multiple R-squared**
+
+The $R^2$ (multiple-R-squared) value indicates what proportion of the variation of the endogenous variable (the price) is explained by the model. In this case, the value is 0.4851 meaning that nearly $49\%$ of the variance of the price can be explained by our model. 
 
 ### Visualising Residuals
 
@@ -126,7 +131,8 @@ par(mfrow=c(2,2))
 plot(lm.train)
 ```
 
-*Fitted vs Residual graph*
+**Fitted vs Residual graph**
+
 In this plot each point is one listing, where the prediction made by the model is on the x-axis, and the accuracy of the prediction is on the y-axis. The distance from the line at 0 is how bad the prediction was for that value.
 
 Since...
@@ -139,25 +145,32 @@ Ideally your plot of the residuals to meet the following requirements:
 
   (1) they’re pretty symmetrically distributed, tending to cluster towards the middle of the plot.
   
-  (2) they’re clustered around the lower single digits of the y-axis (e.g., 0.5 or 1.5, not 30 or 150).
+  (2) they’re clustered around the lower single digits of the y-axis.
   
   (3) in general there aren’t clear patterns.
 
-*Normal Q-Q Plot*
+**Normal Q-Q Plot**
+
 Q-Q plot shows whether the residuals are normally distributed. Ideally, the plot should be on the dotted line. If the Q-Q plot is not on the line then models need to be reworked to make the residual normal. In the above plot, we see that most of the plots are on the line except the extreme points (beginning and end).
 
-*Scale-Location*
+**Scale-Location**
+
 This shows how the residuals are spread and whether the residuals have an equal variance or not.
 
-*Residuals vs Leverage*
+**Residuals vs Leverage**
+
 The plot helps to find influential observations. Here we need to check for points that are outside the dashed line (Cooks distance). A point outside the dashed line will be influential point and removal of that will affect the regression coefficients.
 
-## (3) Make Predictions
+## (3) Make Predictions & Evaluate the model
 
-Train the model und predict the test data
+Next, I use the trained model to make predictions on my test data. 
+
 ```{r}
 pred <- predict(lm.train, newdata = df.test)
+```
 
+```{r}
+# Combine predictions with test dataframe
 pred <- as.data.frame(pred) 
 pred$listing <- as.numeric(rownames(pred))
 df.test$listing <- as.numeric(rownames(df.test))
@@ -165,16 +178,36 @@ df.test$listing <- as.numeric(rownames(df.test))
 pred.df <- left_join(pred, df.test %>%
                        select(log_price, listing),
                      by = "listing") %>%
-  mutate(rmse = (pred - log_price)^2/length(log_price))
+  mutate(error = log_price-pred)
 ```
 
-```{r}
-# (3) evaluate 
-rmse <- sqrt(sum((exp(pred) - df.test$log_price)^2)/length(df.test$log_price))
-c(RMSE = rmse, R2=summary(lm.train)$r.squared)
-```
+A plot of the predicted values for the price agains the actual values shows the explanatory power of the prediction model.  
 
 ```{r}
 ggplot(pred.df, aes(pred, log_price)) +
-  geom_point()
+  geom_point(alpha = 0.8) +
+  geom_smooth(method = lm) +
+  labs(x="Predcted y", y="Actual y")
 ```
+
+The RMSE (root mean squared error), also called RMSD (root mean squared deviation), is used to evaluate models by summarizing the differences between the actual (observed) and predicted values. As the square root of a variance, RMSE can be interpreted as the standard deviation of the unexplained variance, and has the useful property of being in the same units as the response variable. Lower values of RMSE indicate better fit. 
+
+$$
+\text{RMSE} =\sqrt{\frac{1}{n}\sum^n_{i=1}(y_i-\hat{y_i})^2}
+$$
+
+```{r}
+rmse <- function(error) {
+  sqrt(mean(error^2))
+  }
+
+print(paste0("The RMSE is: ", rmse(pred.df$error)))
+```
+
+The variance of the price in the test dataset is helpful to get a better understanding of the RMSE value:
+
+```{r}
+print(paste0("The variance of log(price) is: ",var(df.test$log_price)))
+```
+
+In [part 3](https://franziloew.github.io/airbnb_textmining/linreg_text.html) I will check if the description test of the listings give a better prediction power than the structural features estimated here.  
