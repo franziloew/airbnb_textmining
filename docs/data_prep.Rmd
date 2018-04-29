@@ -1,5 +1,5 @@
 ---
-title: "Using Text Mining To Predict Prices - Part 1"
+title: "Structured vs. Text Data to predict Airbnb prices - Part 1"
 subtitle: "Data Preparation"
 output:  
   html_document:
@@ -26,29 +26,15 @@ knitr::opts_chunk$set(message=FALSE, warning=FALSE)
 rooms <- read_csv("../data/room_27_9_17.csv")
 ```
 
-To get a better understanding about how price-setting in the sharing economy works, a wide range of papers have used a hedonic price model to test the consumer valuation of Airbnb listings (e.g. [Gibbs et al. (2018)](https://www.tandfonline.com/doi/abs/10.1080/10548408.2017.1308292?journalCode=wttm20), [Teubner et al. (2017)](https://www.ceeol.com/search/article-detail?id=596092)). In this kind of modelling, structured attributes (number of rooms, location, rating, etc.) of the listing often together with attributes of the host are used, to evaluate the source of consumer utility. 
+This Markdown file is the first part of [this](https://github.com/franziloew/airbnb_textmining) analysis. 
 
-In the following analysis I want to exploit the textual data in listing description to predict the price of a listing.
-
-**Research questions**:
-
-  1. Can the use of textmining improve the accuracy of predicting the price of Airbnb listings?
-  2. Which keywords affect the price of a listing either positively or negatively? 
-  
-**Method**:
-
-To compare my approach with the conventional methods, I first estimate a model in which I use the structured attributes as exogenous regressors to predict the price of an Airbnb listing. Afterwards, I use textual features of the same listings to predict the prices and compare the two models.
-
-The project is divided into three parts. In this section I describe the data set and how I prepare it for analysis. In the [second part](https://franziloew.github.io/airbnb_textmining/linreg.html) I estimate a linear model with the conventional attributes and in the [third part](https://franziloew.github.io/airbnb_textmining/linreg_text.html) I use text data for the same listings. 
-
-# Load Data
-
-I use a unique dataset that contains information on 47.006 Airbnb listings from seven major German cities, namely Berlin, Munich, Hamburg, Cologne, Dresden, Stuttgart and Frankfurt am Main. Listings were gathered directly from Airbnb's website in September 2017 using a custom web scraper. In this way I have obtained all publicly available information for a listing, including but not limited to prices, accommodation features, reviews and host details.
+I use a unique dataset that contains information on 47.006 Airbnb listings from seven major German cities, namely Berlin, Munich, Hamburg, Cologne, Dresden, Stuttgart and Frankfurt am Main. Listings were gathered directly from Airbnb's website in September 2017 using a custom web scraper. The dataset includes all publicly available information for a listing, including but not limited to prices, accommodation features, reviews and host details.
 
 # Data Preparations
 
 ```{r}
-dim(rooms)
+print(paste0("Number of rows: ", dim(rooms)[1]))
+print(paste0("Number of columns: ", dim(rooms)[2]))
 ```
 
 ```{r}
@@ -65,7 +51,8 @@ rooms <- rooms %>%
 
 ## (1) Cities
 
-Keep only listings from the following cities: Hamburg, München, hamburg, Köln, FFM, Dresden, Stuttgart
+Keep listings from the following cities: Hamburg, München, hamburg, Köln, FFM, Dresden, Stuttgart
+
 ```{r}
 ## create clean-up function
 create_city <- function(x, city){
@@ -399,4 +386,7 @@ c.plot<-dfm(c.plot, tolower = TRUE, remove_numbers = TRUE, remove=stopwords("SMA
 textplot_wordcloud(c.plot, min.freq = 50, color = col)
 ```
 
+
+Go to [Part 2:](https://franziloew.github.io/airbnb_textmining/linreg.html)
+or go back to the [overview](https://github.com/franziloew/airbnb_textmining)
 

@@ -1,6 +1,6 @@
 ---
-title: "Using Text Mining To Predict Prices - Part 2"
-subtitle: "Linear Regression with Text Data"
+title: "Structured vs. Text Data to predict Airbnb prices - Part 2"
+subtitle: "Regression with Text Data"
 output:  
   html_document:
     theme: "lumen"
@@ -8,7 +8,7 @@ output:
     code_folding: show
     self_contained: true
 ---
-```{r message=FALSE, warning=FALSE}
+```{r message=FALSE, warning=FALSE, include=FALSE}
 library(readr)
 library(dplyr)
 library(tidytext)
@@ -22,20 +22,23 @@ col <- RColorBrewer::brewer.pal(5, "Dark2")
 
 options(stringsAsFactors = FALSE)
 knitr::opts_chunk$set(message=FALSE, warning=FALSE)
-```
+set.seed(3456)
 
-
-```{r}
 load(file="../output/prep2.Rda")
 ```
 
-Can we improve the model from [part 2](https://franziloew.github.io/airbnb_textmining/linreg_text.html) including the description text of the listing on the right-hand side of the model?
 
-As before, we wish to predict the price $y_i$ for each Airbnb listing $i$ based on some independent variables $X$. In this model the text counts $c_i$ of each listing description are used. This is a regression problem like any other, except that the high-dimensionality of $c_i$ makes OLS and other standard techniques infeasible. 
+Can we improve the model from [part 2](https://franziloew.github.io/airbnb_textmining/linreg_text.html) using the description text of the listing as exogenous variables?
 
-Here, we have $d=20.637$ documents (aka Airbnb listings) each of which is $w$ words long. Each word is drawn from a vocabulary of $p=33.469$ possible words. The unique representation of each document has dimension $p^w$. A common strategy to deal with the high-dimensionality of text data is the estimation of penalized linear models, particularly with $L_1$ penalization (Gentzkow, 2017).
+As before, the goal is to predict the price $y_i$ for each Airbnb listing $i$ based on some independent variables $X$. In this model the counts of the unique terms $c_i$ of each listing description are used. This is a regression problem like any other, except that the high-dimensionality of $c_i$ makes OLS and other standard techniques difficult to estimate (overfitting). 
 
-However, a first step to use textdata in a prediction model is to convert it to a Document Term Matrix, where each row is a observation (document) and each column is a unique term. 
+Here, we have $d=20.637$ documents (Airbnb listings) each of which is $w$ words long. Each word is drawn from a vocabulary of $p=33.469$ possible words. The unique representation of each document has dimension $p^w$. A common strategy to deal with the high-dimensionality of text data is the estimation of penalized linear models ([Gentzkow, 2017](http://www.nber.org/papers/w23276)).
+
+I will estimate three different models using the same training data: (1) Linear Regression (as in part 2), (2) Penalized Linear Regression using Ridge (L2 Norm) and (3) Penlalized Linear Regression using Lasso (L1 Norm). I will then use these models to make predictions on the test data to see which performs better.
+
+## Document Term Matrix
+
+A first step to use textdata in a prediction model is to convert it to a Document Term Matrix, where each row is a observation (document) and each column is a unique term. 
 
 ```{r}
 corp <- Corpus(VectorSource(df$text_cleaned))
@@ -47,21 +50,20 @@ dtm
 The first five observations of the Document Term Matrix look like this:
 
 ```{r}
-inspect(dtm[1:5, 1:10])
+inspect(dtm[1:5, 100:107])
 ```
 
-Matrices in text analysis problems tend to be very sparse. That is, most of the elements are zero, which implies that they have many parameters that are uninformative. (In contrast: a dense matrix is a matrix in which most of the elements are nonzero.)
+Matrices in text analysis problems tend to be very sparse. That is, most of the elements are zero, which implies that they have many parameters that are uninformative. 
 
-Sparsity can be reduced by removing terms that occur very frequently. This tends to have the effect of both reducing overfitting and improving the predictive abilities of the model.
+Reducing sparsity tends to have the effect of both reducing overfitting and improving the predictive abilities of the model. Here we are reducing the sparsity of the document-term matrix so that the sparsity (% of non-zeros) is a maximum of 99%.
 
 ```{r}
-# Here we are reducing the sparsity of the document-term matrix so that the sparsity (% of non-zeros) is a maximum of 99%.
 dtm<-removeSparseTerms(dtm,0.99)
 dtm
 ```
 
 ```{r}
-inspect(dtm[1:5, 1:10])
+inspect(dtm[1:5, 1:7])
 ```
 
 ```{r}
@@ -82,41 +84,34 @@ df.reg <- dtm.df %>%
   select(-document, -price)
 ```
 
-## (1) Training / Test
+## Training / Test Split
 
 ```{r}
-#create test and training sets
-bound <- floor((nrow(df.reg)/4)*3)         #define % of training and test set
+#define % of training and test set
+bound <- floor((nrow(df.reg)/4)*3)
+#sample rows
+df.reg <- df.reg[sample(nrow(df.reg)), ]          
 
-df.reg <- df.reg[sample(nrow(df.reg)), ]           #sample rows 
-df.train <- df.reg[1:bound, ]              #get training set
-df.test <- df.reg[(bound+1):nrow(df.reg), ]    #get test set
+# train data
+df.train <- df.reg[1:bound, ]              
+x.train <- as.matrix(df.train %>% select(-log_price))
+y.train <- as.matrix(df.train %>% select(log_price))
+
+# test data
+df.test <- df.reg[(bound+1):nrow(df.reg), ]    
+x.test <- as.matrix(df.test %>% select(-log_price))
+y.test <- as.matrix(df.test %>% select(log_price))
 ```
 
-In [part 1](https://franziloew.github.io/airbnb_textmining/data_prep.html) we saw that our dependent variable is left-skewed. This is somehow problematic, as the linear regression assumes normal distributed data. A common strategy to deal with left-skewed data is to take the logarithmic values (log-level model). Lets have a look at the log distributions.
+## Estimation
 
-```{r fig.height=3, fig.width=8}
-p1 <- ggplot(df.train, aes(log_price)) +
-  geom_density(fill = col[3], color = "white") +
-  labs(title = "Train Data")
-
-p2 <- ggplot(df.test, aes(log_price)) +
-  geom_density(fill = col[3], color = "white") +
-  labs(y="", title = "Test Data")
-
-gridExtra::grid.arrange(p1, p2, nrow = 1)
-```
-
-## Linear Regression
-
-### (2) Estimate Training Data
+### (1) Linear Regresion
 
 ```{r}
-lm.train <- lm(log_price~., data = df.train)
+fit.lm <- lm(log_price~., data = df.train)
 
-summary(lm.train)
+summary(fit.lm)
 ```
-
 
 **F stats:** I can reject the null hypothesis that all of the regression coefficients are equal to zero (p-value < 0.01).
 
@@ -131,7 +126,7 @@ The plot below show all terms with a p-value < 0.01.
 ```{r fig.height=12, fig.width=6}
 library(broom)
 
-tidy(lm.train) %>%
+p <- tidy(fit.lm) %>%
   filter(p.value < 0.01) %>%
   filter(term != "(Intercept)") %>%
   mutate(pos = factor(ifelse(estimate>=0,1,0))) %>%
@@ -142,144 +137,187 @@ tidy(lm.train) %>%
   coord_flip() +
   scale_fill_manual(values = c(col[1],col[2])) +
   labs(x="Estimate", y="", title ="Coefficients with p<0.01")
+
+ggsave("../figs/coefficientslm.png", p, height = 14)
 ```
 
+![Coefficients](../figs/coefficientslm.png)
 
 ```{r fig.height=8, fig.width=10}
 par(mfrow=c(2,2))
-plot(lm.train)
+plot(fit.lm)
 ```
 
-### (3) Make Predictions & Evaluate the model
-
-Next, I use the trained model to make predictions on my test data. 
-
-```{r}
-pred <- predict(lm.train, newdata = df.test)
-```
-
-```{r}
-# Combine predictions with test dataframe
-pred <- as.data.frame(pred) 
-pred$listing <- as.numeric(rownames(pred))
-df.test$listing <- as.numeric(rownames(df.test))
-
-pred.df <- left_join(pred, df.test %>%
-                       select(log_price, listing),
-                     by = "listing") %>%
-  mutate(error = log_price-pred)
-```
-
-A plot of the predicted values for the price agains the actual values shows the explanatory power of the prediction model.  
-
-```{r}
-ggplot(pred.df, aes(pred, log_price)) +
-  geom_point(alpha = 0.8) +
-  geom_smooth(method = lm) +
-  labs(x="Predcted y", y="Actual y")
-```
-
-**RMSE**
-
-```{r}
-rmse <- function(error) {
-  sqrt(mean(error^2))
-  }
-
-print(paste0("The RMSE is: ", rmse(pred.df$error)))
-```
-
-The variance of the price in the test dataset is helpful to get a better understanding of the RMSE value:
-
-```{r}
-print(paste0("The variance of log(price) is: ",var(df.test$log_price)))
-```
-
-
-## Penalized Regression
+### (2) Ridge Regression
 ```{r}
 library(glmnet)
 ```
 
-Ridge regression and the lasso are closely related, but only the Lasso has the ability to select predictors. Like OLS, ridge attempts to minimize residual sum of squares of predictors in a given model. However, ridge regression includes an additional ‘shrinkage’ term – the square of the coefficient estimate – which shrinks the estimate of the coefficients towards zero. The impact of this term is controlled by another term, lambda (determined seperately). Two interesting implications of this design are the facts that when $\lambda = 0$ the OLS coefficients are returned and when $\lambda = ∞$, coefficients will approach zero.
+Ridge Regression is a regularization method that tries to avoid overfitting. Like OLS, ridge attempts to minimize residual sum of squares of predictors in a given model. However, ridge regression includes an additional "shrinkage"" allowing some coefficients with minor contribution to the response to get close to zero. In a ridge regression the following term will be minimized:
 
-<!-- # ```{r} -->
-<!-- # lambda <- 10^seq(10, -2, length = 100) -->
-<!-- # ``` -->
-<!-- #  -->
-<!-- # ```{r} -->
-<!-- # #ridge -->
-<!-- # ridge.mod <- glmnet(x, y, alpha = 0, lambda = lambda) -->
-<!-- # predict(ridge.mod, s = 0, type = 'coefficients')[1:10,] -->
-<!-- # ``` -->
-<!-- #  -->
-<!-- # The differences here are nominal. Let's see if we can use ridge to improve on the OLS estimate. -->
-<!-- #  -->
-<!-- # ```{r} -->
-<!-- # textlm <- lm(price~., data = dtm.df, subset = train) -->
-<!-- #  -->
-<!-- # ridge.mod <- glmnet(x[train,], y[train], alpha = 0, lambda = lambda) -->
-<!-- #  -->
-<!-- # #find the best lambda from our list via cross-validation -->
-<!-- # cv.out <- cv.glmnet(x[train,], y[train], alpha = 0) -->
-<!-- # ``` -->
-<!-- #  -->
-<!-- # ```{r} -->
-<!-- # bestlam <- cv.out$lambda.min -->
-<!-- # ``` -->
-<!-- #  -->
-<!-- # ```{r} -->
-<!-- # #make predictions -->
-<!-- # ridge.pred <- predict(ridge.mod, s = bestlam, newx = x[test,]) -->
-<!-- # s.pred <- predict(swisslm, newdata = swiss[test,]) -->
-<!-- # #check MSE -->
-<!-- # mean((s.pred-ytest)^2) -->
-<!-- # ``` -->
-<!-- #  -->
-<!-- # ```{r} -->
-<!-- # mean((ridge.pred-ytest)^2) -->
-<!-- # ``` -->
-<!-- #  -->
-<!-- # Ridge performs better for this data according to the MSE. -->
-<!-- #  -->
-<!-- # ```{r} -->
-<!-- # #a look at the coefficients -->
-<!-- # out = glmnet(x[train,],y[train],alpha = 0) -->
-<!-- # predict(ridge.mod, type = "coefficients", s = bestlam)[1:6,] -->
-<!-- # ``` -->
-<!-- #  -->
-<!-- # As expected, most of the coefficient estimates are more conservative. -->
-<!-- #  -->
-<!-- # Let's have a look at the lasso. The big difference here is in the shrinkage term – the lasso takes the absolute value of the coefficient estimates. -->
-<!-- #  -->
-<!-- # ```{r} -->
-<!-- # lasso.mod <- glmnet(x[train,], y[train], alpha = 1,  -->
-<!-- #                     lambda = lambda) -->
-<!-- #  -->
-<!-- # plot(lasso.mod, xvar = "lambda") -->
-<!-- # ``` -->
-<!-- #  -->
-<!-- # To interpet this plot, recall the optimization problem the lasso solves -->
-<!-- #  -->
-<!-- # $$ -->
-<!-- # \beta_{LASSO}=\min_{\beta}(y-x\beta)'(y-x\beta)+\lambda \sum_j|\beta_j| -->
-<!-- # $$ -->
-<!-- #  -->
-<!-- # so $\lambda$ is the penalty or the Lagrange multiplier. Setting $\lambda = 0$ yields the familiar minimization of squared residuals while for greater values, some of the coefficients will be set to zero. As $\lambda→∞$, all the coefficents will be set to zero.  -->
-<!-- #  -->
-<!-- # Next, we can choose the best lambda using crossvalidation (splitting the sample into training and validation sets and choosing the value of lambda with which the error of prediction is minimal.) -->
-<!-- #  -->
-<!-- # ```{r} -->
-<!-- # crossval <-  cv.glmnet(x = x, y = y) -->
-<!-- # plot(crossval) -->
-<!-- # ``` -->
-<!-- #  -->
-<!-- # ```{r} -->
-<!-- # penalty <- crossval$lambda.min #optimal lambda -->
-<!-- # penalty #minimal shrinkage -->
-<!-- # ``` -->
-<!-- #  -->
-<!-- # ```{r} -->
-<!-- # fit1 <-glmnet(x = x, y = y, alpha = 1, lambda = penalty ) -->
-<!-- # plot(fit1) -->
-<!-- # ``` -->
+$$
+\text{RSS}(\beta) + \lambda \sum^p_{j=1}\beta^2_j
+$$
+
+From this we can easily see, that:
+
+  - $\lambda = 0$: coefficients equal OLS coefficients
+  
+  - $\lambda = \infty$: coefficients approach zero
+
+```{r}
+#fit the model
+fit.ridge <- cv.glmnet(x.train, y.train, family='gaussian', alpha=0)
+```
+
+The above code, performs 10-fold cross validation to choose the best $\lambda$. Moreover, it estimates a linear regression (family = "gaussian").
+
+```{r}
+#Results
+plot(fit.ridge)
+```
+
+Minimum $\lambda$:
+```{r}
+lam_min <- fit.ridge$lambda.min
+lam_min
+```
+
+
+### (3) Least Absolute Shrinkage and Selection Operator (LASSO)
+
+Similar to the Ridge Regression, Lasso also tries to avoid overfitting. The difference is, that it uses the L1 Norm to penalize large coefficients (Lasso is aka L1 Regularization):
+
+$$
+\text{RSS}(\beta) + \lambda \sum^p_{j=1}|\beta_j|
+$$
+
+Lasso can be used to perform variable selection, as it can shrink some of the coefficients to exactly zero.
+
+```{r}
+# Fitting the model (Lasso: Alpha = 1)
+fit.lasso <- cv.glmnet(x.train, y.train, family='gaussian', 
+                       alpha=1)
+```
+
+The above code, performs 10-fold cross validation to choose the best $\lambda$. Moreover, it estimates a linear regression (family = "gaussian").
+
+```{r}
+#Results
+plot(fit.lasso)
+```
+
+Minimum $\lambda$:
+```{r}
+lam_min <- fit.lasso$lambda.min
+lam_min
+```
+
+## Make Predictions
+```{r}
+rmse <- function(error) {
+  sqrt(mean(error^2))
+  }
+```
+
+How well do the models perform when predicting the test data?
+
+**Linear Regresion**
+
+```{r}
+pred.lm <- as.data.frame(predict(fit.lm, 
+                newdata = df.test %>% select(-log_price)))
+
+# Combine predictions with test dataframe
+df.test$pred.lm <- pred.lm[,1]
+df.test$error.lm <- df.test$log_price - df.test$pred.lm
+
+rmse.lm <- rmse(df.test$error.lm)
+print(paste0("The RMSE of the Linear Regression is: ", 
+             rmse.lm))
+```
+
+**Ridge Regression**
+
+```{r}
+pred.ridge <- as.data.frame(predict(fit.ridge, x.test))
+
+# Combine predictions with test dataframe
+df.test$pred.ridge <- pred.ridge[,1]
+df.test$error.ridge <- df.test$log_price - df.test$pred.ridge
+
+rmse.ridge <- rmse(df.test$error.ridge)
+print(paste0("The RMSE of the Ridge Regression is: ", 
+             rmse.ridge))
+```
+
+**LASSO**
+
+```{r}
+pred.lasso <- as.data.frame(predict(fit.lasso, x.test))
+
+# Combine predictions with test dataframe
+df.test$pred.lasso <- pred.lasso[,1]
+df.test$error.lasso <- df.test$log_price - df.test$pred.lasso
+
+rmse.lasso <- rmse(df.test$error.lasso)
+print(paste0("The RMSE of the LASSO is: ", 
+             rmse.lasso))
+```
+
+A plot of the predicted values agains the actual values shows the explanatory power of the prediction models.  
+
+```{r}
+df.test %>% 
+  select(pred.lm, pred.ridge, pred.lasso,
+         log_price) %>%
+  tidyr::gather(model, "predictions", pred.lm:pred.lasso) -> plot
+```
+
+```{r}
+p <- df.test %>%
+  ggplot(aes(pred.lm, log_price)) +
+  geom_point(alpha = 0.8) +
+  geom_smooth(method = lm) +
+  labs(x="Predicted y", y="Actual y",
+       title = "Predicted vs. True Values",
+       subtitle = "OLS with Text Data",
+       caption = paste0("RMSE: ", round(rmse.lm,3)))
+
+ggsave("../figs/residplot2.png", p)
+```
+
+![Residual Plot](../figs/residplot2.png)
+
+```{r}
+p <- df.test %>%
+  ggplot(aes(pred.ridge, log_price)) +
+  geom_point(alpha = 0.8) +
+  geom_smooth(method = lm) +
+  labs(x="Predicted y", y="Actual y",
+       title = "Predicted vs. True Values",
+       subtitle = "Ridge Reg with Text Data",
+       caption = paste0("RMSE: ", round(rmse.ridge,3)))
+
+ggsave("../figs/residplot3.png", p)
+```
+
+![Residual Plot](../figs/residplot3.png)
+
+```{r}
+p<- df.test %>%
+  ggplot(aes(pred.lasso, log_price)) +
+  geom_point(alpha = 0.8) +
+  geom_smooth(method = lm) +
+  labs(x="Predicted y", y="Actual y",
+       title = "Predicted vs. True Values",
+       subtitle = "LASSO with Text Data",
+       caption = paste0("RMSE: ", round(rmse.lasso,3)))
+
+ggsave("../figs/residplot4.png", p)
+```
+
+![Residual Plot](../figs/residplot4.png)
+
+Based on the RMSE, it can be concluded that LASSO performs best when I use the description text as exogenous variables. However, compared to the regression with structural variables from part two, LASSO performs worse. 
+

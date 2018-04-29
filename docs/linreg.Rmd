@@ -1,6 +1,6 @@
 ---
-title: "Using Text Mining To Predict Prices - Part 2"
-subtitle: "Linear Regression"
+title: "Structured vs. Text Data to predict Airbnb prices - Part 2"
+subtitle: "Linear Regression with structured data"
 output:  
   html_document:
     theme: "lumen"
@@ -21,9 +21,11 @@ col <- RColorBrewer::brewer.pal(5, "Dark2")
 
 options(stringsAsFactors = FALSE)
 knitr::opts_chunk$set(message=FALSE, warning=FALSE)
-
+set.seed(3456)
 load(file = "../output/prep2.Rda")
 ```
+
+The goal of this analysis is to predict the price $y_i$ for each Airbnb listing $i$ based on some independent variables $X$.
 
 Based on the literature dealing with Airbnb listing prices (e.g. [Gibbs et al. (2018)](https://www.tandfonline.com/doi/abs/10.1080/10548408.2017.1308292?journalCode=wttm20), [Teubner et al. (2017)](https://www.ceeol.com/search/article-detail?id=596092)), I assume that the following variables have an effect on the price:
 
@@ -42,8 +44,6 @@ Based on the literature dealing with Airbnb listing prices (e.g. [Gibbs et al. (
 - room_type: (i) Entire home, (ii) Private room, (iii) Shared room
 
 ```{r}
-#reduce dataframe
-
 df.reg <- df %>%
   select(city, price, overall_satisfaction, pic_count, 
          language,
@@ -73,10 +73,9 @@ To make predictions, the following steps are applied:
 
 3. Use test dataset to evaluate the model: predict the ‘test’ observation and compare between predicted response and actual response value (RMSE explains on an average how much of the predicted value will be from the actual value) 
 
-## (1) Training / Test
+## (1) Training / Test Split
 
 ```{r}
-#create test and training sets
 bound <- floor((nrow(df.reg)/4)*3)         #define % of training and test set
 
 df.reg <- df.reg[sample(nrow(df.reg)), ]           #sample rows 
@@ -181,15 +180,6 @@ pred.df <- left_join(pred, df.test %>%
   mutate(error = log_price-pred)
 ```
 
-A plot of the predicted values for the price agains the actual values shows the explanatory power of the prediction model.  
-
-```{r}
-ggplot(pred.df, aes(pred, log_price)) +
-  geom_point(alpha = 0.8) +
-  geom_smooth(method = lm) +
-  labs(x="Predcted y", y="Actual y")
-```
-
 The RMSE (root mean squared error), also called RMSD (root mean squared deviation), is used to evaluate models by summarizing the differences between the actual (observed) and predicted values. As the square root of a variance, RMSE can be interpreted as the standard deviation of the unexplained variance, and has the useful property of being in the same units as the response variable. Lower values of RMSE indicate better fit. 
 
 $$
@@ -201,7 +191,8 @@ rmse <- function(error) {
   sqrt(mean(error^2))
   }
 
-print(paste0("The RMSE is: ", rmse(pred.df$error)))
+rmse.lm <- rmse(pred.df$error)
+print(paste0("The RMSE is: ", rmse.lm))
 ```
 
 The variance of the price in the test dataset is helpful to get a better understanding of the RMSE value:
@@ -209,5 +200,22 @@ The variance of the price in the test dataset is helpful to get a better underst
 ```{r}
 print(paste0("The variance of log(price) is: ",var(df.test$log_price)))
 ```
+
+A plot of the predicted values for the price agains the actual values shows the explanatory power of the prediction model.  
+
+```{r}
+p <- ggplot(pred.df, aes(pred, log_price)) +
+  geom_point(alpha = 0.8) +
+  geom_smooth(method = lm) +
+  labs(x="Predicted y", y="Actual y",
+       title = "Predicted vs. True Values",
+       subtitle = "LM with structural Data",
+       caption = paste0("RMSE: ", round(rmse.lm,3)))
+
+ggsave("../figs/residplot1.png", p)
+```
+
+![Residual Plot](../figs/residplot1.png)
+
 
 In [part 3](https://franziloew.github.io/airbnb_textmining/linreg_text.html) I will check if the description test of the listings give a better prediction power than the structural features estimated here.  
