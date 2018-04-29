@@ -1,6 +1,6 @@
 ---
-title: "Structured vs. Text Data to predict Airbnb prices - Part 1"
-subtitle: "Data Preparation"
+title: "Structured vs. Text Data to predict Airbnb prices"
+subtitle: "Part 1: Explore and prepare Data"
 output:  
   html_document:
     theme: "lumen"

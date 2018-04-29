@@ -31,6 +31,6 @@ The project is divided into three parts:
 ![Plot3](figs/residplot3.png)
 ![Plot4](figs/residplot4.png)
 
-2. From the Linear Regression Model we get the following result:
+2. From the OLS Model with Text Data we get the following result:
 
 ![Coefficients](figs/coefficientslm.png)
