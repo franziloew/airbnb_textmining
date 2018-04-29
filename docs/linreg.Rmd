@@ -110,19 +110,19 @@ lm.train <- lm(log_price ~ overall_satisfaction + reviews
 summary(lm.train) 
 ```
 
+**F stats** 
+
+This defines the collective effect of all predictor variables on the response variable. The null hypothesis states that the model with no independent variables fits the data as well as your model. This can be rejected as the p-value is very small.
+
+**Multiple R-squared**
+
+The $R^2$ (multiple-R-squared) value indicates what proportion of the variation of the endogenous variable (the price) is explained by the model. The adjusted R-squared is normalized by the number of exogenous variables (n-1-k). In this case, the value is 0.4841 meaning that nearly $49\%$ of the variance of the price can be explained by our model. 
+
 **Coefficients**
 
 As I am estimating a log-level regression model ($ln(y)=X\beta+\epsilon$), the interpretation of the coefficients is as follows: $\% \Delta y=100\beta \Delta X$*. E.g. the coefficient of the rating variabels (overall_satisfaction) can be interpreted as "if the rating rises by 1 star, we’d expect the price to change by $0.8 \%$, assuming that all other variables remain the same”. Interestingly, the number of reviews has a negative effect on the price. Although this result may not seem intuitive at first glance, it confirms the results of earlier studies on Airbnb listing prices [Teubner et al. (2017)](https://www.ceeol.com/search/article-detail?id=596092)). Overall, all exogenous variables are highly significant, except for the dummy variables for Cologne and Stuttgart. The variable with the strongest effect is the dummy variable for shared room. If the listing offers a shared room, the price decreases by $68\%$ compared to the case were the listing would offer the entire home and all other variables remain the same. 
 
 (*Technically, the interpretation is $\% \Delta y=100(e^{\beta}-1)$ but the previously mentioned interpretation is approximately true for values $-0.1 < \beta < 0.1$) 
-
-**F stats** 
-
-This defines the collective effect of all predictor variables on the response variable. The null hypothesis states that the model with no independent variables fits the data as well as your model. This can be rejected as the p-value is very small $F=1457$
-
-**Multiple R-squared**
-
-The $R^2$ (multiple-R-squared) value indicates what proportion of the variation of the endogenous variable (the price) is explained by the model. In this case, the value is 0.4851 meaning that nearly $49\%$ of the variance of the price can be explained by our model. 
 
 ### Visualising Residuals
 
